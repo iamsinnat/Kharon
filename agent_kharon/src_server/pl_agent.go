@@ -2972,6 +2972,21 @@ func ProcessTasksResult(ts Teamserver, agentData ax.AgentData, taskData ax.TaskD
 											State:      stateStr,
 										})
 									}
+								case SECTION_MEMORY:
+									count := int(cmd_packer.ParseInt32())
+									details.Memory = make([]MemRegion, 0, count)
+
+									for i := 0; i < count; i++ {
+										r := MemRegion{
+											Base:    binary.LittleEndian.Uint64(cmd_packer.ParseBytes()),
+											Size:    binary.LittleEndian.Uint64(cmd_packer.ParseBytes()),
+											Protect: uint32(cmd_packer.ParseInt32()),
+											Type:    uint32(cmd_packer.ParseInt32()),
+											Flags:   uint32(cmd_packer.ParseInt32()),
+											Path:    utf16LeToString(cmd_packer.ParseBytes()),
+										}
+										details.Memory = append(details.Memory, r)
+									}
 								default:
 									break
 								}

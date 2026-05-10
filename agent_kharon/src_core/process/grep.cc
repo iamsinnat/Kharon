@@ -703,23 +703,6 @@ auto get_env(
     free( env_buf );
 }
 
-auto get_instcallbacks(
-    _In_ HANDLE process_handle
-) -> void {
-    PROCESS_INSTRUMENTATION_CALLBACK_INFORMATION instrumentation_callback = { 0 };
-
-    NTSTATUS status = STATUS_SUCCESS;
-
-    status = NtQueryInformationProcess( process_handle, ProcessInstrumentationCallback, &instrumentation_callback, sizeof( instrumentation_callback ), nullptr );
-    if ( ! nt_success( status ) ) {
-        return;
-    }
-
-    instrumentation_callback.Callback;
-
-    return;
-}
-
 auto get_basic_info(
     _In_ HANDLE process_handle,
     _In_ DWORD  target_pid
@@ -953,6 +936,87 @@ auto get_network(
     free( entries );
 }
 
+auto get_memory(
+    _In_ HANDLE process_handle
+) -> void {
+
+    struct MemRegion {
+        ULONGLONG base;
+        ULONGLONG size;
+        DWORD     protect;
+        DWORD     type;
+        DWORD     flags;
+        WCHAR     path[MAX_PATH];
+    };
+
+    auto regions = ( MemRegion* ) malloc( 512 * sizeof( MemRegion ) );
+    if ( ! regions ) return;
+
+    INT32 region_count = 0;
+
+    MEMORY_BASIC_INFORMATION mbi = { 0 };
+    PBYTE addr = 0;
+
+    while ( VirtualQueryEx( process_handle, addr, &mbi, sizeof( mbi ) ) && region_count < 512 ) {
+
+        PBYTE next = ( PBYTE ) mbi.BaseAddress + mbi.RegionSize;
+
+        if ( mbi.State != MEM_COMMIT ) {
+            addr = next;
+            continue;
+        }
+
+        DWORD base_prot = mbi.Protect & 0xFF;
+        DWORD type      = mbi.Type;
+        DWORD flags     = 0;
+
+        BOOL is_exec  = ( base_prot & ( PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY ) ) != 0;
+        BOOL is_write = ( base_prot & ( PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY ) ) != 0;
+
+        if ( is_exec && is_write ) {
+            flags |= 1;
+        }
+
+        if ( type == MEM_PRIVATE && is_exec ) {
+            flags |= 2;
+        }
+
+        if ( flags != 0 ) {
+            MemRegion* r = &regions[region_count++];
+            r->base    = ( ULONGLONG ) mbi.BaseAddress;
+            r->size    = mbi.RegionSize;
+            r->protect = mbi.Protect;
+            r->type    = type;
+            r->flags   = flags;
+            memset( r->path, 0, sizeof( r->path ) );
+
+            K32GetMappedFileNameW( process_handle, mbi.BaseAddress, r->path, MAX_PATH );
+        }
+
+        addr = next;
+    }
+
+    if ( region_count == 0 ) {
+        free( regions );
+        return;
+    }
+
+    BeaconPkgInt32( SECTION_MEMORY );
+    BeaconPkgInt32( region_count );
+
+    for ( INT32 i = 0; i < region_count; i++ ) {
+        MemRegion* r = &regions[i];
+        BeaconPkgBytes( ( PBYTE ) &r->base, sizeof( ULONGLONG ) );
+        BeaconPkgBytes( ( PBYTE ) &r->size, sizeof( ULONGLONG ) );
+        BeaconPkgInt32( r->protect );
+        BeaconPkgInt32( r->type );
+        BeaconPkgInt32( r->flags );
+        BeaconPkgBytes( ( PBYTE ) r->path, wcslen( r->path ) * sizeof( WCHAR ) );
+    }
+
+    free( regions );
+}
+
 extern "C" auto go( char* args, int argc ) -> void {
     datap data_parser = {};
     BeaconDataParse( &data_parser, args, argc );
@@ -1005,6 +1069,10 @@ extern "C" auto go( char* args, int argc ) -> void {
         get_network( target_pid );
     }
     
+    if ( section_flags & FLAG_MEMORY ) {
+        get_memory( process_handle );
+    }
+
     BeaconPkgInt32( SECTION_END );
 
     CloseHandle( process_handle );

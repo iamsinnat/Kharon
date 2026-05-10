@@ -128,6 +128,8 @@ extern "C" {
     DFR(KERNEL32, IsWow64Process2)
     DFR(KERNEL32, GetProcessTimes)
 
+    DFR(KERNEL32, K32GetMappedFileNameW)
+
     // ==================== NTDLL ====================
     DFR(NTDLL, DbgPrint)
     DFR(NTDLL, RtlRandomEx)
@@ -343,6 +345,8 @@ extern "C" {
 
 #define IsWow64Process2                   KERNEL32$IsWow64Process2
 #define GetProcessTimes                   KERNEL32$GetProcessTimes
+
+#define K32GetMappedFileNameW             KERNEL32$K32GetMappedFileNameW
 
 // ==================== NTDLL MACROS ====================
 #define DbgPrint                          NTDLL$DbgPrint

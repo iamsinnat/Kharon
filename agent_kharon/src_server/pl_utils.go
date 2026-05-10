@@ -959,12 +959,13 @@ type ProtectionInfo struct {
 	Signer uint8
 }
 
-type MemoryRegion struct {
-	BaseAddress uint64
-	RegionSize  uint64
-	State       uint32
-	Protect     uint32
-	Type        uint32
+type MemRegion struct {
+	Base    uint64
+	Size    uint64
+	Protect uint32
+	Type    uint32
+	Flags   uint32
+	Path    string
 }
 
 type NetworkEntry struct {
@@ -998,7 +999,7 @@ type ProcessDetails struct {
 	Modules      []ModuleInfo
 	Threads      []ThreadInfo
 	Handles      []HandleInfo
-	Memory       []MemoryRegion
+	Memory       []MemRegion
 	Network      []NetworkEntry
 	Env          []EnvVar
 	Token        *TokenInfo
@@ -2505,36 +2506,23 @@ func FormatDetailsTable(data *ProcessDetails) string {
 
 	b.WriteString(fullBorder("top"))
 
-	// ==================== PROTECTION ====================
-	if data.Protection != nil {
-		b.WriteString(sectionTitle("PROTECTION"))
-		b.WriteString(splitBorder())
-		b.WriteString(row("Type", protectionTypeStr(data.Protection.Type)))
-		b.WriteString(row("Signer", protectionSignerStr(data.Protection.Signer)))
-		b.WriteString(row("Audit", fmt.Sprintf("%v", data.Protection.Audit != 0)))
-		b.WriteString(mergeBorder())
-	}
-
-	// ================== MITIGATIONS ==================
-	if len(data.Mitigations) > 0 {
-		b.WriteString(sectionTitle("MITIGATION POLICIES"))
+	// ==================== PROCESS INFO ====================
+	if data.BasicInfo != nil {
+		b.WriteString(sectionTitle("PROCESS INFO"))
 		b.WriteString(splitBorder())
 
-		var currentCat string
-		for _, p := range data.Mitigations {
-			dot := strings.Index(p, ".")
-			if dot == -1 {
-				continue
-			}
-			cat := p[:dot]
-			if cat != currentCat {
-				if currentCat != "" {
-					b.WriteString(border("middle"))
-				}
-				currentCat = cat
-			}
-			b.WriteString(row(p, "Enabled"))
+		b.WriteString(row("PID", fmt.Sprintf("%d", data.BasicInfo.Pid)))
+		b.WriteString(row("PPID", fmt.Sprintf("%d", data.BasicInfo.Ppid)))
+		b.WriteString(row("Image Name", data.BasicInfo.ImageName))
+		b.WriteString(wrapRow("Image Path", data.BasicInfo.ImagePath))
+		b.WriteString(row("Architecture", data.BasicInfo.Arch))
+
+		started := "Unknown"
+		if !data.BasicInfo.StartTime.IsZero() {
+			started = data.BasicInfo.StartTime.Format("2006-01-02 15:04:05 UTC")
 		}
+		b.WriteString(row("Started", started))
+
 		b.WriteString(mergeBorder())
 	}
 
@@ -2543,6 +2531,65 @@ func FormatDetailsTable(data *ProcessDetails) string {
 		b.WriteString(sectionTitle("COMMAND LINE"))
 		b.WriteString(splitBorder())
 		b.WriteString(wrapRow("Command Line", data.CmdLine))
+		b.WriteString(mergeBorder())
+	}
+
+	// ==================== THREADS ====================
+	if len(data.Threads) > 0 {
+		b.WriteString(sectionTitle("THREADS"))
+		b.WriteString(splitBorder())
+		for i, t := range data.Threads {
+			b.WriteString(row("TID", fmt.Sprintf("%d", t.Tid)))
+			b.WriteString(row("  Flags", fmt.Sprintf("0x%08X", t.Flags)))
+			b.WriteString(row("  Size", fmt.Sprintf("%d", t.Size)))
+			b.WriteString(row("  Base Priority", fmt.Sprintf("%d", t.BasePri)))
+			b.WriteString(row("  Delta Priority", fmt.Sprintf("%d", t.DeltaPri)))
+			if i < len(data.Threads)-1 {
+				b.WriteString(border("middle"))
+			}
+		}
+		b.WriteString(mergeBorder())
+	}
+
+	// ==================== TOKEN ====================
+	if data.Token != nil {
+		b.WriteString(sectionTitle("TOKEN / IDENTITY"))
+		b.WriteString(splitBorder())
+
+		var account string
+		switch {
+		case data.Token.Domain != "" && data.Token.Username != "":
+			account = data.Token.Domain + "\\" + data.Token.Username
+		case data.Token.Username != "":
+			account = data.Token.Username
+		case data.Token.Domain != "":
+			account = data.Token.Domain
+		default:
+			account = "(unknown)"
+		}
+
+		integrity := data.Token.IntegrityLevel
+		if integrity == "" {
+			integrity = "Unknown"
+		}
+
+		b.WriteString(wrapRow("Account", account))
+		b.WriteString(row("Elevated", fmt.Sprintf("%v", data.Token.IsElevated)))
+		b.WriteString(row("Integrity Level", integrity))
+
+		if len(data.Token.Privileges) > 0 {
+			b.WriteString(border("middle"))
+			b.WriteString(row("Privilege Name", "State"))
+			b.WriteString(border("middle"))
+			for _, p := range data.Token.Privileges {
+				state := "Disabled"
+				if p.Enabled {
+					state = "Enabled"
+				}
+				b.WriteString(wrapRow(p.Name, state))
+			}
+		}
+
 		b.WriteString(mergeBorder())
 	}
 
@@ -2564,19 +2611,75 @@ func FormatDetailsTable(data *ProcessDetails) string {
 			}
 		}
 		b.WriteString(mergeBorder())
-	} //todo
+	}
 
-	// ==================== THREADS ====================
-	if len(data.Threads) > 0 {
-		b.WriteString(sectionTitle("THREADS"))
+	// ==================== MEMORY ====================
+	if len(data.Memory) > 0 {
+		protectStr := func(p uint32) string {
+			switch p & 0xFF {
+			case 0x01:
+				return "NOACCESS"
+			case 0x02:
+				return "R"
+			case 0x04:
+				return "RW"
+			case 0x08:
+				return "WRITECOPY"
+			case 0x10:
+				return "X"
+			case 0x20:
+				return "RX"
+			case 0x40:
+				return "RWX"
+			case 0x80:
+				return "EXECUTE_WRITECOPY"
+			default:
+				return fmt.Sprintf("0x%02X", p&0xFF)
+			}
+		}
+
+		typeStr := func(t uint32) string {
+			switch t {
+			case 0x20000:
+				return "Private"
+			case 0x40000:
+				return "Mapped"
+			case 0x1000000:
+				return "Image"
+			default:
+				return fmt.Sprintf("0x%X", t)
+			}
+		}
+
+		b.WriteString(sectionTitle("MEMORY"))
 		b.WriteString(splitBorder())
-		for i, t := range data.Threads {
-			b.WriteString(row("TID", fmt.Sprintf("%d", t.Tid)))
-			b.WriteString(row("  Flags", fmt.Sprintf("0x%08X", t.Flags)))
-			b.WriteString(row("  Size", fmt.Sprintf("%d", t.Size)))
-			b.WriteString(row("  Base Priority", fmt.Sprintf("%d", t.BasePri)))
-			b.WriteString(row("  Delta Priority", fmt.Sprintf("%d", t.DeltaPri)))
-			if i < len(data.Threads)-1 {
+		for i, r := range data.Memory {
+			tag := "PRIVATE_EXEC"
+			if r.Flags&1 != 0 {
+				tag = "RWX"
+			}
+
+			label := fmt.Sprintf("0x%016X  [%s]", r.Base, tag)
+			detail := fmt.Sprintf("%s | %s | %d KB", protectStr(r.Protect), typeStr(r.Type), r.Size/1024)
+
+			b.WriteString(wrapBoth(label, detail))
+			if r.Path != "" {
+				b.WriteString(wrapRow("", r.Path))
+			}
+			if i < len(data.Memory)-1 {
+				b.WriteString(border("middle"))
+			}
+		}
+		b.WriteString(mergeBorder())
+	}
+
+	// ==================== ENVIRONMENT ====================
+	if len(data.Env) > 0 {
+		b.WriteString(sectionTitle("ENVIRONMENT"))
+		b.WriteString(splitBorder())
+		for i, e := range data.Env {
+			b.WriteString(wrapBoth(e.Key, e.Value))
+			if i < len(data.Env)-1 {
 				b.WriteString(border("middle"))
 			}
 		}
@@ -2670,80 +2773,6 @@ func FormatDetailsTable(data *ProcessDetails) string {
 		}
 	}
 
-	// ==================== TOKEN ====================
-	if data.Token != nil {
-		b.WriteString(sectionTitle("TOKEN / IDENTITY"))
-		b.WriteString(splitBorder())
-
-		var account string
-		switch {
-		case data.Token.Domain != "" && data.Token.Username != "":
-			account = data.Token.Domain + "\\" + data.Token.Username
-		case data.Token.Username != "":
-			account = data.Token.Username
-		case data.Token.Domain != "":
-			account = data.Token.Domain
-		default:
-			account = "(unknown)"
-		}
-
-		integrity := data.Token.IntegrityLevel
-		if integrity == "" {
-			integrity = "Unknown"
-		}
-
-		b.WriteString(wrapRow("Account", account))
-		b.WriteString(row("Elevated", fmt.Sprintf("%v", data.Token.IsElevated)))
-		b.WriteString(row("Integrity Level", integrity))
-
-		if len(data.Token.Privileges) > 0 {
-			b.WriteString(border("middle"))
-			b.WriteString(row("Privilege Name", "State"))
-			b.WriteString(border("middle"))
-			for _, p := range data.Token.Privileges {
-				state := "Disabled"
-				if p.Enabled {
-					state = "Enabled"
-				}
-				b.WriteString(wrapRow(p.Name, state))
-			}
-		}
-
-		b.WriteString(mergeBorder())
-	}
-
-	// ==================== ENVIRONMENT ====================
-	if len(data.Env) > 0 {
-		b.WriteString(sectionTitle("ENVIRONMENT"))
-		b.WriteString(splitBorder())
-		for i, e := range data.Env {
-			b.WriteString(wrapBoth(e.Key, e.Value))
-			if i < len(data.Env)-1 {
-				b.WriteString(border("middle"))
-			}
-		}
-		b.WriteString(mergeBorder())
-	}
-
-	// ==================== PROCESS INFO ====================
-	if data.BasicInfo != nil {
-		b.WriteString(sectionTitle("PROCESS INFO"))
-		b.WriteString(splitBorder())
-
-		b.WriteString(row("PID", fmt.Sprintf("%d", data.BasicInfo.Pid)))
-		b.WriteString(row("PPID", fmt.Sprintf("%d", data.BasicInfo.Ppid)))
-		b.WriteString(row("Image Name", data.BasicInfo.ImageName))
-		b.WriteString(wrapRow("Image Path", data.BasicInfo.ImagePath))
-		b.WriteString(row("Architecture", data.BasicInfo.Arch))
-
-		started := "Unknown"
-		if !data.BasicInfo.StartTime.IsZero() {
-			started = data.BasicInfo.StartTime.Format("2006-01-02 15:04:05 UTC")
-		}
-		b.WriteString(row("Started", started))
-
-		b.WriteString(mergeBorder())
-	}
 	// ==================== NETWORK ====================
 	if len(data.Network) > 0 {
 		b.WriteString(sectionTitle("NETWORK"))
@@ -2764,6 +2793,39 @@ func FormatDetailsTable(data *ProcessDetails) string {
 			if i < len(data.Network)-1 {
 				b.WriteString(border("middle"))
 			}
+		}
+		b.WriteString(mergeBorder())
+	}
+
+	// ==================== PROTECTION ====================
+	if data.Protection != nil {
+		b.WriteString(sectionTitle("PROTECTION"))
+		b.WriteString(splitBorder())
+		b.WriteString(row("Type", protectionTypeStr(data.Protection.Type)))
+		b.WriteString(row("Signer", protectionSignerStr(data.Protection.Signer)))
+		b.WriteString(row("Audit", fmt.Sprintf("%v", data.Protection.Audit != 0)))
+		b.WriteString(mergeBorder())
+	}
+
+	// ================== MITIGATIONS ==================
+	if len(data.Mitigations) > 0 {
+		b.WriteString(sectionTitle("MITIGATION POLICIES"))
+		b.WriteString(splitBorder())
+
+		var currentCat string
+		for _, p := range data.Mitigations {
+			dot := strings.Index(p, ".")
+			if dot == -1 {
+				continue
+			}
+			cat := p[:dot]
+			if cat != currentCat {
+				if currentCat != "" {
+					b.WriteString(border("middle"))
+				}
+				currentCat = cat
+			}
+			b.WriteString(row(p, "Enabled"))
 		}
 		b.WriteString(mergeBorder())
 	}
