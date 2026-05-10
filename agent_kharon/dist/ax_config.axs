@@ -66,8 +66,11 @@ function RegisterCommands(listenerType)
     cmd_exit.addSubCommands([cmd_exit_thread, cmd_exit_process]);
     
     /// PS
-    let cmd_ps_grep = ax.create_command("details", "Display various information about a process", "process details 21814", "Task: display details of target process");
+    let cmd_ps_grep = ax.create_command("details", "Display various information about a process", "process details 1234 --sections all", "Task: display details of target process");
     cmd_ps_grep.addArgInt("pid", true);
+    cmd_ps_grep.addArgFlagString("--sections", "sections",
+    "Comma-separated sections or 'all': basic_info,cmdline,protection,mitigations,modules,threads,handles,token,env,network,memory",
+    "all");
 
     let cmd_ps_list = ax.create_command("list", "Display all running processes", "process list", "Task: enumerate running processes");
     

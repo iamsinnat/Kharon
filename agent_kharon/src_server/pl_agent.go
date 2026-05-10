@@ -1050,27 +1050,20 @@ func CreateTask(ts Teamserver, agent ax.AgentData, args map[string]any) (ax.Task
 				goto RET
 			}
 
-			// build section flags from args
 			sectionFlags := uint32(0)
 
 			flagMap := map[string]uint32{
-				"pid":          1 << 0,
-				"ppid":         1 << 1,
-				"arch":         1 << 2,
-				"image_name":   1 << 3,
-				"image_path":   1 << 4,
-				"cmdline":      1 << 5,
-				"protection":   1 << 6,
-				"mitigations":  1 << 7,
-				"modules":      1 << 8,
-				"threads":      1 << 9,
-				"handles":      1 << 10,
-				"memory":       1 << 11,
-				"network":      1 << 12,
-				"env":          1 << 13,
-				"token":        1 << 14,
-				"started":      1 << 15,
-				"instcallback": 1 << 16,
+				"basic_info":  1 << 0,
+				"cmdline":     1 << 1,
+				"protection":  1 << 2,
+				"mitigations": 1 << 3,
+				"modules":     1 << 4,
+				"threads":     1 << 5,
+				"handles":     1 << 6,
+				"token":       1 << 7,
+				"env":         1 << 8,
+				"network":     1 << 9,
+				"memory":      1 << 10,
 			}
 
 			if sections, ok := args["sections"].(string); ok {
@@ -1078,13 +1071,24 @@ func CreateTask(ts Teamserver, agent ax.AgentData, args map[string]any) (ax.Task
 					sectionFlags = 0xFFFFFFFF
 				} else {
 					for _, s := range strings.Split(sections, ",") {
-						if flag, exists := flagMap[strings.TrimSpace(s)]; exists {
-							sectionFlags |= flag
+						s = strings.TrimSpace(s)
+						if s == "" {
+							continue
 						}
+						flag, exists := flagMap[s]
+						if !exists {
+							err = fmt.Errorf("unknown section '%s'. valid: basic_info,cmdline,protection,mitigations,modules,threads,handles,token,env,network,memory", s)
+							goto RET
+						}
+						sectionFlags |= flag
+					}
+					if sectionFlags == 0 {
+						err = errors.New("no valid sections specified")
+						goto RET
 					}
 				}
 			} else {
-				sectionFlags = 0xFFFFFFFF // default: all
+				sectionFlags = 0xFFFFFFFF
 			}
 
 			bofParam, err = PackExtData(
