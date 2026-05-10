@@ -2362,99 +2362,92 @@ func FormatDetailsTable(data *ProcessDetails) string {
 
 	colLabel := 45
 	colValue := 45
+	totalWidth := colLabel + colValue + 5
+
+	// ── helpers ──
 
 	row := func(label, value string) string {
 		return fmt.Sprintf("│ %-*s │ %-*s │\n", colLabel, label, colValue, value)
 	}
 
+	repeat := func(ch string, n int) string { return strings.Repeat(ch, n) }
+
 	border := func(kind string) string {
+		l, m, r := "├", "┼", "┤"
 		switch kind {
 		case "top":
-			return "┌" + strings.Repeat("─", colLabel+2) + "┬" + strings.Repeat("─", colValue+2) + "┐\n"
+			l, m, r = "┌", "┬", "┐"
 		case "bottom":
-			return "└" + strings.Repeat("─", colLabel+2) + "┴" + strings.Repeat("─", colValue+2) + "┘\n"
+			l, m, r = "└", "┴", "┘"
 		}
-		return "├" + strings.Repeat("─", colLabel+2) + "┼" + strings.Repeat("─", colValue+2) + "┤\n"
+		return l + repeat("─", colLabel+2) + m + repeat("─", colValue+2) + r + "\n"
 	}
 
 	fullBorder := func(kind string) string {
-		totalWidth := colLabel + colValue + 5
+		l, r := "├", "┤"
 		switch kind {
 		case "top":
-			return "┌" + strings.Repeat("─", totalWidth) + "┐\n"
+			l, r = "┌", "┐"
 		case "bottom":
-			return "└" + strings.Repeat("─", totalWidth) + "┘\n"
+			l, r = "└", "┘"
 		}
-		return "├" + strings.Repeat("─", totalWidth) + "┤\n"
+		return l + repeat("─", totalWidth) + r + "\n"
 	}
 
 	splitBorder := func() string {
-		return "├" + strings.Repeat("─", colLabel+2) + "┬" + strings.Repeat("─", colValue+2) + "┤\n"
+		return "├" + repeat("─", colLabel+2) + "┬" + repeat("─", colValue+2) + "┤\n"
 	}
 
 	mergeBorder := func() string {
-		return "├" + strings.Repeat("─", colLabel+2) + "┴" + strings.Repeat("─", colValue+2) + "┤\n"
+		return "├" + repeat("─", colLabel+2) + "┴" + repeat("─", colValue+2) + "┤\n"
 	}
 
 	sectionTitle := func(title string) string {
-		totalWidth := colLabel + colValue + 5
-		padding := (totalWidth - len(title)) / 2
-		leftPad := strings.Repeat(" ", padding)
-		rightPad := strings.Repeat(" ", totalWidth-len(title)-padding)
-		return fmt.Sprintf("│%s%s%s│\n", leftPad, title, rightPad)
+		pad := (totalWidth - len(title)) / 2
+		return fmt.Sprintf("│%s%s%s│\n",
+			repeat(" ", pad), title, repeat(" ", totalWidth-len(title)-pad))
+	}
+
+	wrapText := func(s string, max int) []string {
+		runes := []rune(s)
+		if len(runes) == 0 {
+			return []string{""}
+		}
+		var lines []string
+		for i := 0; i < len(runes); i += max {
+			end := i + max
+			if end > len(runes) {
+				end = len(runes)
+			}
+			lines = append(lines, string(runes[i:end]))
+		}
+		return lines
 	}
 
 	wrapRow := func(label, value string) string {
 		value = strings.TrimRight(value, "\x00\r\n")
-		runes := []rune(value)
-		if len(runes) == 0 {
-			return row(label, "")
-		}
+		lines := wrapText(value, colValue)
 		var out string
-		for i := 0; i < len(runes); i += colValue {
-			end := i + colValue
-			if end > len(runes) {
-				end = len(runes)
-			}
+		for i, line := range lines {
 			if i == 0 {
-				out += row(label, string(runes[i:end]))
+				out += row(label, line)
 			} else {
-				out += row("", string(runes[i:end]))
+				out += row("", line)
 			}
 		}
 		return out
 	}
 
 	wrapBoth := func(label, value string) string {
-		maxLabel := colLabel
-		maxValue := colValue
-
-		labelRunes := []rune(label)
-		valueRunes := []rune(value)
-
-		var labelLines []string
-		for len(labelRunes) > maxLabel {
-			labelLines = append(labelLines, string(labelRunes[:maxLabel]))
-			labelRunes = labelRunes[maxLabel:]
-		}
-		labelLines = append(labelLines, string(labelRunes))
-
-		var valueLines []string
-		for len(valueRunes) > maxValue {
-			valueLines = append(valueLines, string(valueRunes[:maxValue]))
-			valueRunes = valueRunes[maxValue:]
-		}
-		valueLines = append(valueLines, string(valueRunes))
-
+		labelLines := wrapText(label, colLabel)
+		valueLines := wrapText(value, colValue)
 		total := len(labelLines)
 		if len(valueLines) > total {
 			total = len(valueLines)
 		}
-
 		var out string
 		for i := 0; i < total; i++ {
-			l := ""
-			v := ""
+			l, v := "", ""
 			if i < len(labelLines) {
 				l = labelLines[i]
 			}
@@ -2466,95 +2459,88 @@ func FormatDetailsTable(data *ProcessDetails) string {
 		return out
 	}
 
-	protectionTypeStr := func(t uint8) string {
-		switch t {
-		case 0:
-			return "None"
-		case 1:
-			return "ProtectedLight"
-		case 2:
-			return "Protected"
-		default:
-			return fmt.Sprintf("0x%02X", t)
+	// writes items with middle borders between them
+	writeList := func(items int, fn func(i int)) {
+		for i := 0; i < items; i++ {
+			fn(i)
+			if i < items-1 {
+				b.WriteString(border("middle"))
+			}
 		}
 	}
 
-	protectionSignerStr := func(s uint8) string {
-		switch s {
-		case 0:
-			return "None"
-		case 1:
-			return "Authenticode"
-		case 2:
-			return "CodeGen"
-		case 3:
-			return "Antimalware"
-		case 4:
-			return "Lsa"
-		case 5:
-			return "Windows"
-		case 6:
-			return "WinTcb"
-		case 7:
-			return "WinSystem"
-		case 8:
-			return "App"
-		default:
-			return fmt.Sprintf("0x%02X", s)
-		}
+	// section opens with title + split, closes with merge
+	openSection := func(title string) {
+		b.WriteString(sectionTitle(title))
+		b.WriteString(splitBorder())
 	}
+
+	closeSection := func() {
+		b.WriteString(mergeBorder())
+	}
+
+	// ── empty check ──
+
+	hasData := data.BasicInfo != nil ||
+		data.CmdLine != "" ||
+		len(data.Threads) > 0 ||
+		data.Token != nil ||
+		len(data.Modules) > 0 ||
+		len(data.Memory) > 0 ||
+		len(data.Env) > 0 ||
+		len(data.Handles) > 0 ||
+		len(data.Network) > 0 ||
+		data.Protection != nil ||
+		len(data.Mitigations) > 0
+
+	if !hasData {
+		return "Not enough privileges to query process information.\n"
+	}
+
+	// ── sections ──
 
 	b.WriteString(fullBorder("top"))
 
 	// ==================== PROCESS INFO ====================
 	if data.BasicInfo != nil {
-		b.WriteString(sectionTitle("PROCESS INFO"))
-		b.WriteString(splitBorder())
-
+		openSection("PROCESS INFO")
 		b.WriteString(row("PID", fmt.Sprintf("%d", data.BasicInfo.Pid)))
 		b.WriteString(row("PPID", fmt.Sprintf("%d", data.BasicInfo.Ppid)))
 		b.WriteString(row("Image Name", data.BasicInfo.ImageName))
 		b.WriteString(wrapRow("Image Path", data.BasicInfo.ImagePath))
 		b.WriteString(row("Architecture", data.BasicInfo.Arch))
-
 		started := "Unknown"
 		if !data.BasicInfo.StartTime.IsZero() {
 			started = data.BasicInfo.StartTime.Format("2006-01-02 15:04:05 UTC")
 		}
 		b.WriteString(row("Started", started))
-
-		b.WriteString(mergeBorder())
+		closeSection()
 	}
 
 	// ================= COMMAND LINE ==================
 	if data.CmdLine != "" {
-		b.WriteString(sectionTitle("COMMAND LINE"))
-		b.WriteString(splitBorder())
+		openSection("COMMAND LINE")
 		b.WriteString(wrapRow("Command Line", data.CmdLine))
-		b.WriteString(mergeBorder())
+		closeSection()
 	}
 
 	// ==================== THREADS ====================
 	if len(data.Threads) > 0 {
-		b.WriteString(sectionTitle("THREADS"))
-		b.WriteString(splitBorder())
-		for i, t := range data.Threads {
+		openSection("THREADS")
+		writeList(len(data.Threads), func(i int) {
+			t := data.Threads[i]
 			b.WriteString(row("TID", fmt.Sprintf("%d", t.Tid)))
 			b.WriteString(row("  Flags", fmt.Sprintf("0x%08X", t.Flags)))
 			b.WriteString(row("  Size", fmt.Sprintf("%d", t.Size)))
 			b.WriteString(row("  Base Priority", fmt.Sprintf("%d", t.BasePri)))
 			b.WriteString(row("  Delta Priority", fmt.Sprintf("%d", t.DeltaPri)))
-			if i < len(data.Threads)-1 {
-				b.WriteString(border("middle"))
-			}
-		}
-		b.WriteString(mergeBorder())
+		})
+		closeSection()
 	}
 
 	// ==================== TOKEN ====================
 	if data.Token != nil {
-		b.WriteString(sectionTitle("TOKEN / IDENTITY"))
-		b.WriteString(splitBorder())
+		openSection("TOKEN / IDENTITY")
 
 		var account string
 		switch {
@@ -2590,143 +2576,98 @@ func FormatDetailsTable(data *ProcessDetails) string {
 			}
 		}
 
-		b.WriteString(mergeBorder())
+		closeSection()
 	}
 
 	// ==================== MODULES ====================
 	if len(data.Modules) > 0 {
-		b.WriteString(sectionTitle("MODULES"))
-		b.WriteString(splitBorder())
-		for i, mod := range data.Modules {
+		openSection("MODULES")
+		writeList(len(data.Modules), func(i int) {
+			mod := data.Modules[i]
 			name := mod.Name
 			if idx := strings.LastIndex(name, "\\"); idx != -1 {
 				name = name[idx+1:]
 			}
-
 			b.WriteString(wrapBoth(name, fmt.Sprintf("Base:  0x%016X", mod.Base)))
 			b.WriteString(row("", fmt.Sprintf("Size:  0x%08X", mod.Size)))
 			b.WriteString(wrapBoth("", "Path:  "+mod.Name))
-			if i < len(data.Modules)-1 {
-				b.WriteString(border("middle"))
-			}
-		}
-		b.WriteString(mergeBorder())
+		})
+		closeSection()
 	}
 
 	// ==================== MEMORY ====================
 	if len(data.Memory) > 0 {
 		protectStr := func(p uint32) string {
-			switch p & 0xFF {
-			case 0x01:
-				return "NOACCESS"
-			case 0x02:
-				return "R"
-			case 0x04:
-				return "RW"
-			case 0x08:
-				return "WRITECOPY"
-			case 0x10:
-				return "X"
-			case 0x20:
-				return "RX"
-			case 0x40:
-				return "RWX"
-			case 0x80:
-				return "EXECUTE_WRITECOPY"
-			default:
-				return fmt.Sprintf("0x%02X", p&0xFF)
+			names := map[uint32]string{
+				0x01: "NOACCESS", 0x02: "R", 0x04: "RW", 0x08: "WRITECOPY",
+				0x10: "X", 0x20: "RX", 0x40: "RWX", 0x80: "EXECUTE_WRITECOPY",
 			}
+			if s, ok := names[p&0xFF]; ok {
+				return s
+			}
+			return fmt.Sprintf("0x%02X", p&0xFF)
 		}
 
 		typeStr := func(t uint32) string {
-			switch t {
-			case 0x20000:
-				return "Private"
-			case 0x40000:
-				return "Mapped"
-			case 0x1000000:
-				return "Image"
-			default:
-				return fmt.Sprintf("0x%X", t)
+			names := map[uint32]string{0x20000: "Private", 0x40000: "Mapped", 0x1000000: "Image"}
+			if s, ok := names[t]; ok {
+				return s
 			}
+			return fmt.Sprintf("0x%X", t)
 		}
 
-		b.WriteString(sectionTitle("MEMORY"))
-		b.WriteString(splitBorder())
-		for i, r := range data.Memory {
+		openSection(fmt.Sprintf("MEMORY — SUSPICIOUS (%d)", len(data.Memory)))
+		writeList(len(data.Memory), func(i int) {
+			r := data.Memory[i]
 			tag := "PRIVATE_EXEC"
 			if r.Flags&1 != 0 {
 				tag = "RWX"
 			}
-
-			label := fmt.Sprintf("0x%016X  [%s]", r.Base, tag)
-			detail := fmt.Sprintf("%s | %s | %d KB", protectStr(r.Protect), typeStr(r.Type), r.Size/1024)
-
-			b.WriteString(wrapBoth(label, detail))
+			b.WriteString(wrapBoth(
+				fmt.Sprintf("0x%016X  [%s]", r.Base, tag),
+				fmt.Sprintf("%s | %s | %d KB", protectStr(r.Protect), typeStr(r.Type), r.Size/1024),
+			))
 			if r.Path != "" {
 				b.WriteString(wrapRow("", r.Path))
 			}
-			if i < len(data.Memory)-1 {
-				b.WriteString(border("middle"))
-			}
-		}
-		b.WriteString(mergeBorder())
+		})
+		closeSection()
 	}
 
 	// ==================== ENVIRONMENT ====================
 	if len(data.Env) > 0 {
-		b.WriteString(sectionTitle("ENVIRONMENT"))
-		b.WriteString(splitBorder())
-		for i, e := range data.Env {
-			b.WriteString(wrapBoth(e.Key, e.Value))
-			if i < len(data.Env)-1 {
-				b.WriteString(border("middle"))
-			}
-		}
-		b.WriteString(mergeBorder())
+		openSection("ENVIRONMENT")
+		writeList(len(data.Env), func(i int) {
+			b.WriteString(wrapBoth(data.Env[i].Key, data.Env[i].Value))
+		})
+		closeSection()
 	}
 
 	// ==================== HANDLES ====================
 	if len(data.Handles) > 0 {
 		accessStr := func(a uint32) string {
 			var flags []string
-
 			if a&0x001F0000 == 0x001F0000 {
 				flags = append(flags, "FULL_CONTROL")
 			} else {
-				if a&0x00010000 != 0 {
-					flags = append(flags, "DELETE")
-				}
-				if a&0x00020000 != 0 {
-					flags = append(flags, "READ_CONTROL")
-				}
-				if a&0x00040000 != 0 {
-					flags = append(flags, "WRITE_DAC")
-				}
-				if a&0x00080000 != 0 {
-					flags = append(flags, "WRITE_OWNER")
-				}
-				if a&0x00100000 != 0 {
-					flags = append(flags, "SYNCHRONIZE")
+				for mask, name := range map[uint32]string{
+					0x00010000: "DELETE", 0x00020000: "READ_CONTROL",
+					0x00040000: "WRITE_DAC", 0x00080000: "WRITE_OWNER",
+					0x00100000: "SYNCHRONIZE",
+				} {
+					if a&mask != 0 {
+						flags = append(flags, name)
+					}
 				}
 			}
-
-			if a&0x0001 != 0 {
-				flags = append(flags, "QUERY")
+			for mask, name := range map[uint32]string{
+				0x0001: "QUERY", 0x0002: "TRAVERSE", 0x0004: "NOTIFY",
+				0x0008: "CREATE", 0x0010: "SET",
+			} {
+				if a&mask != 0 {
+					flags = append(flags, name)
+				}
 			}
-			if a&0x0002 != 0 {
-				flags = append(flags, "TRAVERSE")
-			}
-			if a&0x0004 != 0 {
-				flags = append(flags, "NOTIFY")
-			}
-			if a&0x0008 != 0 {
-				flags = append(flags, "CREATE")
-			}
-			if a&0x0010 != 0 {
-				flags = append(flags, "SET")
-			}
-
 			if len(flags) == 0 {
 				return fmt.Sprintf("0x%08X", a)
 			}
@@ -2734,14 +2675,8 @@ func FormatDetailsTable(data *ProcessDetails) string {
 		}
 
 		interestingTypes := map[string]bool{
-			"Process":   true,
-			"Thread":    true,
-			"Mutant":    true,
-			"Section":   true,
-			"Token":     true,
-			"Key":       true,
-			"ALPC Port": true,
-			"Desktop":   true,
+			"Process": true, "Thread": true, "Mutant": true, "Section": true,
+			"Token": true, "Key": true, "ALPC Port": true, "Desktop": true,
 		}
 
 		var filtered []HandleInfo
@@ -2752,66 +2687,73 @@ func FormatDetailsTable(data *ProcessDetails) string {
 		}
 
 		if len(filtered) > 0 {
-			b.WriteString(sectionTitle(fmt.Sprintf("HANDLES (%d/%d)", len(filtered), len(data.Handles))))
-			b.WriteString(splitBorder())
-			for i, h := range filtered {
+			openSection(fmt.Sprintf("HANDLES (%d/%d)", len(filtered), len(data.Handles)))
+			writeList(len(filtered), func(i int) {
+				h := filtered[i]
 				name := h.ObjName
 				if name == "" {
 					name = "(unnamed)"
 				}
-
 				b.WriteString(wrapBoth(
 					fmt.Sprintf("ID: 0x%04X | Type: %s", h.Value, h.TypeName),
 					accessStr(h.Access),
 				))
 				b.WriteString(wrapBoth(name, ""))
-				if i < len(filtered)-1 {
-					b.WriteString(border("middle"))
-				}
-			}
-			b.WriteString(mergeBorder())
+			})
+			closeSection()
 		}
 	}
 
 	// ==================== NETWORK ====================
 	if len(data.Network) > 0 {
-		b.WriteString(sectionTitle("NETWORK"))
-		b.WriteString(splitBorder())
-		for i, n := range data.Network {
+		openSection(fmt.Sprintf("NETWORK (%d)", len(data.Network)))
+		writeList(len(data.Network), func(i int) {
+			n := data.Network[i]
 			local := fmt.Sprintf("%s:%d", n.LocalAddr, n.LocalPort)
 			remote := "*:*"
 			if n.RemoteAddr != "" && n.RemoteAddr != "*" {
 				remote = fmt.Sprintf("%s:%d", n.RemoteAddr, n.RemotePort)
 			}
-
 			b.WriteString(row("Protocol", n.Protocol))
 			b.WriteString(wrapRow("Local", local))
 			b.WriteString(wrapRow("Remote", remote))
 			if n.State != "" {
 				b.WriteString(row("State", n.State))
 			}
-			if i < len(data.Network)-1 {
-				b.WriteString(border("middle"))
-			}
-		}
-		b.WriteString(mergeBorder())
+		})
+		closeSection()
 	}
 
 	// ==================== PROTECTION ====================
 	if data.Protection != nil {
-		b.WriteString(sectionTitle("PROTECTION"))
-		b.WriteString(splitBorder())
+		protectionTypeStr := func(t uint8) string {
+			names := map[uint8]string{0: "None", 1: "ProtectedLight", 2: "Protected"}
+			if s, ok := names[t]; ok {
+				return s
+			}
+			return fmt.Sprintf("0x%02X", t)
+		}
+		protectionSignerStr := func(s uint8) string {
+			names := map[uint8]string{
+				0: "None", 1: "Authenticode", 2: "CodeGen", 3: "Antimalware",
+				4: "Lsa", 5: "Windows", 6: "WinTcb", 7: "WinSystem", 8: "App",
+			}
+			if n, ok := names[s]; ok {
+				return n
+			}
+			return fmt.Sprintf("0x%02X", s)
+		}
+
+		openSection("PROTECTION")
 		b.WriteString(row("Type", protectionTypeStr(data.Protection.Type)))
 		b.WriteString(row("Signer", protectionSignerStr(data.Protection.Signer)))
 		b.WriteString(row("Audit", fmt.Sprintf("%v", data.Protection.Audit != 0)))
-		b.WriteString(mergeBorder())
+		closeSection()
 	}
 
 	// ================== MITIGATIONS ==================
 	if len(data.Mitigations) > 0 {
-		b.WriteString(sectionTitle("MITIGATION POLICIES"))
-		b.WriteString(splitBorder())
-
+		openSection("MITIGATION POLICIES")
 		var currentCat string
 		for _, p := range data.Mitigations {
 			dot := strings.Index(p, ".")
@@ -2827,17 +2769,21 @@ func FormatDetailsTable(data *ProcessDetails) string {
 			}
 			b.WriteString(row(p, "Enabled"))
 		}
-		b.WriteString(mergeBorder())
+		closeSection()
 	}
+
+	// ── footer ──
 
 	result := b.String()
 	lastMerge := strings.LastIndex(result, "┴")
 	if lastMerge != -1 {
 		lineStart := strings.LastIndex(result[:lastMerge], "├")
 		if lineStart != -1 {
-			result = result[:lineStart] + border("bottom")
+			result = result[:lineStart] + fullBorder("bottom")
 		}
 	}
+
+	result += "See Jobs & Tasks tab for easier review of the output.\n"
 
 	return result
 }
