@@ -28,9 +28,7 @@ DEFS := \
     -D XOR_KEY='$(XOR_KEY)'
 
 # Shellcode Section 
-SECTION_CLEAN := $(strip $(SECTION))
-
-ifeq ($(SECTION_CLEAN),.rsrc)
+ifeq ($(SECTION),rsrc)
     DEFS    += -D SHELLCODE_SECTION_LOCATION=SHELLCODE_SECTION_RSRC
     DEFS    += -D RSRC_ID=$(RSRC_ID)
     RES_OBJ := Include/shellcode.res
@@ -40,26 +38,22 @@ else
 endif
 
 # Injection Technique 
-INJECTION_TECHNIQUE_CLEAN := $(strip $(INJECTION_TECHNIQUE))
-
-ifeq ($(INJECTION_TECHNIQUE_CLEAN),Module Stomp)
+ifeq ($(INJECTION_TECHNIQUE),Module Stomp)
     INJECTION_SRC := Source/Injection/Stomper.cc
     DEFS          += -D INJECTION_TECHNIQUE=INJECTION_TECHNIQUE_STOMPER
 endif
 
-ifeq ($(INJECTION_TECHNIQUE_CLEAN),Classic)
+ifeq ($(INJECTION_TECHNIQUE),Classic)
     INJECTION_SRC := Source/Injection/Classic.cc
     DEFS          += -D INJECTION_TECHNIQUE=INJECTION_TECHNIQUE_CLASSIC
 endif
 
 # Encryption Type
-ENCRYPTION_TYPE_CLEAN := $(strip $(ENCRYPTION_TYPE))
-
-ifeq ($(ENCRYPTION_TYPE_CLEAN),Xor)
+ifeq ($(ENCRYPTION_TYPE),xor)
     DEFS += -D ENCRYPTION_TYPE=ENCRYPTION_XOR
 endif
 
-ifeq ($(ENCRYPTION_TYPE_CLEAN),None)
+ifeq ($(ENCRYPTION_TYPE),none)
     DEFS += -D ENCRYPTION_TYPE=ENCRYPTION_NONE
 endif
 

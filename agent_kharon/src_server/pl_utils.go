@@ -48,6 +48,8 @@ type KharonData struct {
 		SecurebootEnabled bool   `json:"secureboot_enabled"`
 	} `json:"machine"`
 
+	PipeName string `json:"pipe_name"`
+
 	Session struct {
 		AgentIdStr  string `json:"agent_id_str"`
 		AgentIdInt  uint32 `json:"agent_id_int"`
@@ -677,10 +679,10 @@ type AgentConfig struct {
 	WorkingTimeEnd   string `json:"workingtime_end"`
 	WorkingTimeStart string `json:"workingtime_start"`
 
-	PeSection           string `json:"pe_section"`
-	CustomSectionName   string `json:"custom_section_name"`
-	InjectionTechnique  string `json:"injection_technique"`
-	EncryptionTechnique string `json:"encryption_technique"`
+	PeSection             string `json:"pe_section"`
+	CustomSectionName	  string `json:"custom_section_name"`
+	InjectionTechnique 	  string `json:"injection_technique"`
+	EncryptionTechnique	  string `json:"encryption_technique"`
 
 	kharon_data []byte
 }
@@ -780,6 +782,12 @@ const (
 )
 
 const (
+	LINK_TYPE_SMB   int = 1
+	LINK_TYPE_TCP   int = 2
+	UNLINK_TYPE     int = 3
+)
+
+const (
 	COMMAND_TUNNEL_START_TCP = 62
 	COMMAND_TUNNEL_START_UDP = 63
 	COMMAND_TUNNEL_WRITE_TCP = 64
@@ -841,6 +849,10 @@ const (
 
 const (
 	TASK_CONFIG int = 10
+)
+
+const (
+	PIPE_LIST int = 38
 )
 
 const (
@@ -2903,6 +2915,9 @@ func FormatKharonTable(data *KharonData) string {
 	b.WriteString(row("Kharon in-memory Size", fmt.Sprintf("%d bytes", data.Session.Base.Size)))
 	b.WriteString(row("Code Page (ACP)", fmt.Sprintf("%d", data.Session.Acp)))
 	b.WriteString(row("OEM Code Page", fmt.Sprintf("%d", data.Session.Oemcp)))
+	if data.PipeName != "" {
+		b.WriteString(row("SMB Pipe Name", data.PipeName))
+	}
 	b.WriteString(border("middle"))
 
 	// ==================== TIMING ====================
