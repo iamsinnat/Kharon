@@ -1,5 +1,3 @@
-// ToDo VirtualAlloc -> memcpy -> VirtualProtect -> Exec
-
 #include <Kharon.h>
 
 #if INJECTION_TECHNIQUE == INJECTION_TECHNIQUE_CLASSIC
@@ -52,4 +50,4 @@ auto Injection::Classic( VOID ) -> VOID {
     CleanMask();
 }
 
-#endif // INJECTION_TECHNIQUE_CLASSIC
+#endif

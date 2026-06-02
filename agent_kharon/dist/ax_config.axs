@@ -73,11 +73,11 @@ function RegisterCommands(listenerType)
     "all");
 
     let cmd_ps_list = ax.create_command("list", "Display all running processes", "process list", "Task: enumerate running processes");
-
+    
     let _cmd_ps_kill = ax.create_command("kill", "Terminate a process by its Process ID (PID)", "process kill 1234", "Task: terminate process");
     _cmd_ps_kill.addArgInt("pid", true);
     _cmd_ps_kill.addArgInt("exit_code", false);
-
+    
     let cmd_ps_run = ax.create_command("create", "Execute a new process with specified command line", "process create --command \"cmd.exe /c whoami /all\"", "Task: create and execute new process");
     cmd_ps_run.addArgFlagString("--command", "cmd", true, "Full command line with arguments");
     cmd_ps_run.addArgFlagString("--state", "state", false, "State for process creation (suspended/standard)");
@@ -88,12 +88,6 @@ function RegisterCommands(listenerType)
 
     let cmd_ps = ax.create_command("process", "Process management - list, create, and terminate processes");
     cmd_ps.addSubCommands([cmd_ps_list, cmd_ps_grep, cmd_ps_run, _cmd_ps_kill]);
-
-    /// JOB
-    /// let cmd_job_list = ax.create_command("list", "Display all currently running background jobs", "job list", "Task: enumerate running jobs");
-
-    /// let cmd_job = ax.create_command("job", "Background job management - monitor and control asynchronous tasks");
-    /// cmd_job.addSubCommands([cmd_job_list]);
 
     /// TOKEN
 
@@ -159,7 +153,7 @@ function RegisterCommands(listenerType)
     cmd_config_amsietwbypass.addArgString("bypass", true, "Bypass target: 'all', 'amsi', 'etw', or 'none'");
 
     let cmd_config_spawnto = ax.create_command("spawnto", "Set the executable path for spawning new processes", "config spawnto C:\\Windows\\System32\\rundll32.exe", "Task: configure spawn target");
-    cmd_config_spawnto.addArgString("path", true);
+    cmd_config_spawnto.addArgString("spawnto", true);
 
     let cmd_config_wkrtime = ax.create_command("worktime", "Set operational hours for beacon activity", "config worktime 09:00 18:00", "Task: configure working hours");
     cmd_config_wkrtime.addArgString("start", true);
@@ -168,8 +162,8 @@ function RegisterCommands(listenerType)
     let cmd_config_syscall = ax.create_command("syscall", "Change the syscall method", "config syscall spoof_indirect");
     cmd_config_syscall.addArgString("syscall", true, "options: 'spoof', 'spoof_indirect' or 'none'");
 
-    let cmd_config_bofproxy = ax.create_command("bofproxy", "Change BOF API Proxy status (true/false)", "config bofproxy true");
-    cmd_config_bofproxy.addArgString("status", true);
+    let cmd_config_bofproxy = ax.create_command("bofproxy", "Change BOF API Proxy status (true/false)", "config bofproxy true")
+    cmd_config_bofproxy.addArgString("status", true)
 
     let cmd_config_forkpipe = ax.create_command("fork_pipe_name", "Change named pipe to use in fork commands", "config fork_pipe_name \\\\.\\pipe\\new_pipe_name");
     cmd_config_forkpipe.addArgString("name", true);
@@ -177,8 +171,7 @@ function RegisterCommands(listenerType)
     let cmd_config_subcommands = [
         cmd_config_sleep, cmd_config_jitter, cmd_config_ppid, cmd_config_blockdll, cmd_config_spoofarg, cmd_config_wkrtime,
         cmd_config_killdate_date, cmd_config_killdate_exit, cmd_config_killdate_selfdel,
-        cmd_config_heap_obf, cmd_config_mask, cmd_config_amsietwbypass, cmd_config_spawnto, cmd_config_syscall, cmd_config_bofproxy,
-        cmd_config_forkpipe
+        cmd_config_heap_obf, cmd_config_mask, cmd_config_amsietwbypass, cmd_config_spawnto, cmd_config_syscall, cmd_config_bofproxy, cmd_config_forkpipe
     ];
 
     let cmd_config = ax.create_command("config", "Configuration management - adjust beacon behavior and settings", "config sleep 50s");
@@ -223,7 +216,7 @@ function RegisterCommands(listenerType)
 
     /// SCINJECT
 
-    let cmd_scinject = ax.create_command("scinject", "Inject raw shellcode into a target process by PID", "scinject /tmp/payload.bin 1234", "Task: inject shellcode into process");
+    let cmd_scinject = ax.create_command("scinject", "Inject raw shellcode into a target process by PID", "scinject 1234 /tmp/payload.bin", "Task: inject shellcode into process");
     cmd_scinject.addArgInt("pid", true);
     cmd_scinject.addArgFile("shellcode", true);
 
@@ -246,44 +239,14 @@ function RegisterCommands(listenerType)
     let cmd_execute = ax.create_command("execute", "Execute Beacon Object Files or post-exploitation shellcode modules");
     cmd_execute.addSubCommands([cmd_exec_bof, cmd_exec_postex]);
 
-    /// LIST PIPE
-
-    let cmd_list_pipe = ax.create_command("list_pipe", "List named pipes on target (wildcard filter)", "list_pipe kharon", "Task: enumerate named pipes");
-    cmd_list_pipe.addArgString("filter", false, "Pipe name filter (substring match)");
-
-    /// LINK
-
-    let cmd_link_smb = ax.create_command("smb", "Link to a child beacon over SMB named pipe", "link smb 10.10.10.5", "Task: link SMB pivot");
-    cmd_link_smb.addArgString("target", true, "Target hostname or IP");
-    cmd_link_smb.addArgString("pipename", false, "Named pipe name (uses listener default if omitted)");
-
-    let cmd_link = ax.create_command("link", "Link to a child beacon for pivoting");
-    cmd_link.addSubCommands([cmd_link_smb]);
-
-    /// UNLINK
-
-    let cmd_unlink = ax.create_command("unlink", "Unlink a child pivot beacon", "unlink <agent_id>", "Task: unlink pivot");
-    cmd_unlink.addArgString("agent_id", true, "Agent ID of child to disconnect");
-
     if (listenerType == "KharonHTTP") {
         let commands_external = ax.create_commands_group("kharon", [
             cmd_info, cmd_config, cmd_exit, cmd_selfdel, cmd_execute,
             cmd_fs, cmd_ps, cmd_token, cmd_scinject, cmd_upload,
-            cmd_download, cmd_socks, cmd_rportfwd,
-            cmd_link, cmd_unlink, cmd_list_pipe
+            cmd_download, cmd_socks, cmd_rportfwd
         ]);
 
         return { commands_windows: commands_external }
-    }
-
-    if (listenerType == "KharonSMB") {
-        let commands_internal = ax.create_commands_group("kharon", [
-            cmd_info, cmd_config, cmd_exit, cmd_selfdel, cmd_execute,
-            cmd_fs, cmd_ps, cmd_token, cmd_scinject, cmd_upload,
-            cmd_download, cmd_link, cmd_unlink, cmd_list_pipe
-        ]);
-
-        return { commands_windows: commands_internal }
     }
 
     return ax.create_commands_group("none", []);
@@ -333,26 +296,31 @@ function GenerateUI(listenerType)
     // Killdate Settings
     let killdate_group    = form.create_groupbox("Killdate Settings", true);
     let labelKilldateDate = form.create_label("Date:");
-    let dateKill          = form.create_dateline("dd.MM.yyyy");
-    let layout_killdate   = form.create_gridlayout();
-    layout_killdate.addWidget(labelKilldateDate, 0, 0, 1, 1);
-    layout_killdate.addWidget(dateKill,          0, 1, 1, 2);
+    let dateKill = form.create_dateline("dd.MM.yyyy");
+
+    let layout_killdate = form.create_gridlayout();
+    layout_killdate.addWidget(labelKilldateDate,     0, 0, 1, 1);
+    layout_killdate.addWidget(dateKill,              0, 1, 1, 2);
     let panel_killdate = form.create_panel();
     panel_killdate.setLayout(layout_killdate);
     killdate_group.setPanel(panel_killdate);
     killdate_group.setChecked(false);
 
-    // Workingtime Settings
+    // Workingtime
     let workingtime_group = form.create_groupbox("Working Time Settings", true);
-    let labelTimeStart    = form.create_label("Start Time:");
-    let timeStart         = form.create_timeline("HH:mm");
-    let labelTimeFinish   = form.create_label("End Time:");
-    let timeFinish        = form.create_timeline("HH:mm");
+
+    let labelTimeStart = form.create_label("Start Time:");
+    let timeStart = form.create_timeline("HH:mm");
+
+    let labelTimeFinish = form.create_label("End Time:");
+    let timeFinish = form.create_timeline("HH:mm");
+
     let layout_workingtime = form.create_gridlayout();
     layout_workingtime.addWidget(labelTimeStart,  0, 0, 1, 1);
     layout_workingtime.addWidget(timeStart,       0, 1, 1, 2);
     layout_workingtime.addWidget(labelTimeFinish, 1, 0, 1, 1);
     layout_workingtime.addWidget(timeFinish,      1, 1, 1, 2);
+
     let panel_workingtime = form.create_panel();
     panel_workingtime.setLayout(layout_workingtime);
     workingtime_group.setPanel(panel_workingtime);
@@ -374,7 +342,7 @@ function GenerateUI(listenerType)
     postex_group.setPanel(panel_postex);
 
     // Evasion Settings
-    let labelBypass  = form.create_label("Bypass:");
+    let labelBypass = form.create_label("Bypass:");
     let bypass_combo = form.create_combo();
     bypass_combo.addItem("None");
     bypass_combo.addItem("AMSI");
@@ -393,11 +361,11 @@ function GenerateUI(listenerType)
     syscall_combo.setCurrentIndex(0);
 
     let layout_evasion = form.create_gridlayout();
-    layout_evasion.addWidget(labelBypass,   0, 0, 1, 1);
-    layout_evasion.addWidget(bypass_combo,  0, 1, 1, 1);
-    layout_evasion.addWidget(labelSyscall,  1, 0, 1, 1);
-    layout_evasion.addWidget(syscall_combo, 1, 1, 1, 1);
-    layout_evasion.addWidget(bof_api_check, 1, 2, 1, 1);
+    layout_evasion.addWidget(labelBypass,       0, 0, 1, 1);
+    layout_evasion.addWidget(bypass_combo,      0, 1, 1, 1);
+    layout_evasion.addWidget(labelSyscall,      1, 0, 1, 1);
+    layout_evasion.addWidget(syscall_combo,     1, 1, 1, 1);
+    layout_evasion.addWidget(bof_api_check,     1, 2, 1, 1);
     let panel_evasion = form.create_panel();
     panel_evasion.setLayout(layout_evasion);
     let evasion_group = form.create_groupbox("Evasion Settings", false);
@@ -424,17 +392,23 @@ function GenerateUI(listenerType)
 
     // ── PE Settings tab ───────────────────────────────────────
 
-    // Shellcode Settings group
+    // ── Shellcode Source ──────────────────────────────────────
+    let labelSource  = form.create_label("Shellcode Source:");
+    let source_combo = form.create_combo();
+    source_combo.addItem("section");
+    source_combo.addItem("rsrc");
+    source_combo.addItem("network");
+    source_combo.setCurrentIndex(0);
+
+    // ── Section options (visible when source = section) ──────
     let labelSection  = form.create_label("PE Section:");
     let section_combo = form.create_combo();
     section_combo.addItem(".text");
     section_combo.addItem(".data");
     section_combo.addItem(".rdata");
-    section_combo.addItem(".rsrc");
     section_combo.addItem("custom");
     section_combo.setCurrentIndex(0);
 
-    // Shellcode Settings group
     let labelCustomSection = form.create_label("Section Name:");
     let textCustomSection  = form.create_textline(".kharon");
     textCustomSection.setPlaceholder(".mysection");
@@ -447,22 +421,108 @@ function GenerateUI(listenerType)
     panel_custom.setLayout(hlayout_custom);
     panel_custom.setVisible(false);
 
+    let layout_section_opts = form.create_gridlayout();
+    layout_section_opts.addWidget(labelSection,   0, 0, 1, 1);
+    layout_section_opts.addWidget(section_combo,  0, 1, 1, 1);
+    layout_section_opts.addWidget(panel_custom,   1, 0, 1, 2);
+    let panel_section_opts = form.create_panel();
+    panel_section_opts.setLayout(layout_section_opts);
+    panel_section_opts.setVisible(true);
+
+    form.connect(section_combo, "currentTextChanged", function(text) {
+        panel_custom.setVisible(text === "custom");
+    });
+
+    // ── Network options (visible when source = network) ──────
+    let labelStagingHost = form.create_label("Host:");
+    let textStagingHost  = form.create_textline("");
+    textStagingHost.setPlaceholder("10.10.10.1");
+
+    let labelStagingURL = form.create_label("URL:");
+    let textStagingURL  = form.create_textline("/payload");
+    textStagingURL.setPlaceholder("/stage/payload.bin");
+
+    let labelStagingPort = form.create_label("Port:");
+    let spinStagingPort  = form.create_spin();
+    spinStagingPort.setRange(1, 65535);
+    spinStagingPort.setValue(443);
+
+    let staging_secure_check = form.create_check("Use HTTPS");
+    staging_secure_check.setChecked(true);
+
+    let labelStagingMethod = form.create_label("Method:");
+    let staging_method_combo = form.create_combo();
+    staging_method_combo.addItem("GET");
+    staging_method_combo.addItem("POST");
+    staging_method_combo.setCurrentIndex(0);
+
+    let labelStagingUA = form.create_label("User-Agent:");
+    let textStagingUA  = form.create_textline("");
+    textStagingUA.setPlaceholder("Mozilla/5.0 (Windows NT 10.0; Win64; x64)...");
+
+    let labelStagingHeaders = form.create_label("Headers:");
+    let textStagingHeaders  = form.create_textline("");
+    textStagingHeaders.setPlaceholder("Cookie: session=abc123");
+
+    let labelStagingProxy = form.create_label("Proxy:");
+    let textStagingProxy  = form.create_textline("");
+    textStagingProxy.setPlaceholder("http://proxy:8080 (empty = direct)");
+
+    let labelStagingRetries = form.create_label("Max Retries:");
+    let spinStagingRetries  = form.create_spin();
+    spinStagingRetries.setRange(0, 20);
+    spinStagingRetries.setValue(3);
+
+    let labelStagingRetryDelay = form.create_label("Retry Delay (ms):");
+    let spinStagingRetryDelay  = form.create_spin();
+    spinStagingRetryDelay.setRange(500, 60000);
+    spinStagingRetryDelay.setValue(2000);
+
+    let layout_network_opts = form.create_gridlayout();
+    layout_network_opts.addWidget(labelStagingHost,       0, 0, 1, 1);
+    layout_network_opts.addWidget(textStagingHost,        0, 1, 1, 1);
+    layout_network_opts.addWidget(labelStagingURL,        1, 0, 1, 1);
+    layout_network_opts.addWidget(textStagingURL,         1, 1, 1, 1);
+    layout_network_opts.addWidget(labelStagingPort,       2, 0, 1, 1);
+    layout_network_opts.addWidget(spinStagingPort,        2, 1, 1, 1);
+    layout_network_opts.addWidget(staging_secure_check,   3, 0, 1, 1);
+    layout_network_opts.addWidget(labelStagingMethod,     3, 1, 1, 1);
+    layout_network_opts.addWidget(staging_method_combo,   4, 1, 1, 1);
+    layout_network_opts.addWidget(labelStagingUA,         5, 0, 1, 1);
+    layout_network_opts.addWidget(textStagingUA,          5, 1, 1, 1);
+    layout_network_opts.addWidget(labelStagingHeaders,    6, 0, 1, 1);
+    layout_network_opts.addWidget(textStagingHeaders,     6, 1, 1, 1);
+    layout_network_opts.addWidget(labelStagingProxy,      7, 0, 1, 1);
+    layout_network_opts.addWidget(textStagingProxy,       7, 1, 1, 1);
+    layout_network_opts.addWidget(labelStagingRetries,    8, 0, 1, 1);
+    layout_network_opts.addWidget(spinStagingRetries,     8, 1, 1, 1);
+    layout_network_opts.addWidget(labelStagingRetryDelay, 9, 0, 1, 1);
+    layout_network_opts.addWidget(spinStagingRetryDelay,  9, 1, 1, 1);
+    let panel_network_opts = form.create_panel();
+    panel_network_opts.setLayout(layout_network_opts);
+    panel_network_opts.setVisible(false);
+
+    // ── Source switching logic ────────────────────────────────
+    form.connect(source_combo, "currentTextChanged", function(text) {
+        panel_section_opts.setVisible(text === "section");
+        panel_network_opts.setVisible(text === "network");
+    });
+
+    // ── Encryption ───────────────────────────────────────────
     let labelEncryption  = form.create_label("Encryption:");
     let encryption_combo = form.create_combo();
     encryption_combo.addItem("None");
     encryption_combo.addItem("Xor");
     encryption_combo.setCurrentIndex(0);
 
-    form.connect(section_combo, "currentTextChanged", function(text) {
-        panel_custom.setVisible(text === "custom");
-    });
-
+    // ── Shellcode Settings group ─────────────────────────────
     let layout_shellcode = form.create_gridlayout();
-    layout_shellcode.addWidget(labelSection,    0, 0, 1, 1);
-    layout_shellcode.addWidget(section_combo,   0, 1, 1, 1);
-    layout_shellcode.addWidget(panel_custom,    1, 0, 1, 2);
-    layout_shellcode.addWidget(labelEncryption, 2, 0, 1, 1);
-    layout_shellcode.addWidget(encryption_combo,2, 1, 1, 1);
+    layout_shellcode.addWidget(labelSource,        0, 0, 1, 1);
+    layout_shellcode.addWidget(source_combo,       0, 1, 1, 1);
+    layout_shellcode.addWidget(panel_section_opts, 1, 0, 1, 2);
+    layout_shellcode.addWidget(panel_network_opts, 2, 0, 1, 2);
+    layout_shellcode.addWidget(labelEncryption,    3, 0, 1, 1);
+    layout_shellcode.addWidget(encryption_combo,   3, 1, 1, 1);
     let panel_shellcode = form.create_panel();
     panel_shellcode.setLayout(layout_shellcode);
     let shellcode_group = form.create_groupbox("Shellcode Settings", false);
@@ -530,58 +590,6 @@ function GenerateUI(listenerType)
     let layout = form.create_gridlayout();
     layout.addWidget(root_tabs, 0, 0, 1, 1);
 
-    // SMB beacons: no sleep/jitter (parent controls timing via pipe), no PE Settings tab
-    if (listenerType == "KharonSMB") {
-        let layout_scroll_smb = form.create_gridlayout();
-        layout_scroll_smb.addWidget(labelFormat,        0, 0, 1, 1);
-        layout_scroll_smb.addWidget(comboFormat,        0, 1, 1, 1);
-        layout_scroll_smb.addWidget(guardrails_group,   1, 0, 1, 3);
-        layout_scroll_smb.addWidget(killdate_group,     2, 0, 1, 3);
-        layout_scroll_smb.addWidget(postex_group,       3, 0, 1, 3);
-        layout_scroll_smb.addWidget(evasion_group,      4, 0, 1, 3);
-        layout_scroll_smb.addWidget(mask_group,         5, 0, 1, 3);
-
-        let panel_scroll_smb = form.create_panel();
-        panel_scroll_smb.setLayout(layout_scroll_smb);
-        const scroll_smb = form.create_scrollarea();
-        scroll_smb.setPanel(panel_scroll_smb);
-        let layout_smb = form.create_gridlayout();
-        layout_smb.addWidget(scroll_smb, 0, 0, 1, 1);
-
-        let container_smb = form.create_container();
-        container_smb.put("format", comboFormat);
-        container_smb.put("sleep", textSleep);
-        container_smb.put("jitter", spinJitter);
-        container_smb.put("guardrails_ip", textGuardrailsIP);
-        container_smb.put("guardrails_hostname", textGuardrailsHostname);
-        container_smb.put("guardrails_user", textGuardrailsUser);
-        container_smb.put("guardrails_domain", textGuardrailsDomain);
-        container_smb.put("killdate_check", killdate_group);
-        container_smb.put("killdate_date", dateKill);
-        container_smb.put("fork_pipename", textPipename);
-        container_smb.put("spawnto", textSpawnTo);
-        container_smb.put("bypass", bypass_combo);
-        container_smb.put("bof_api_proxy", bof_api_check);
-        container_smb.put("syscall", syscall_combo);
-        container_smb.put("mask_heap", heap_obf_check);
-        container_smb.put("mask_sleep", sleep_mask_combo);
-
-        // PE/loader keys (required by pl_agent.go for Exe/Dll/Svc builds — defaults from hidden widgets)
-        container_smb.put("pe_section", section_combo);
-        container_smb.put("encryption_technique", encryption_combo);
-        container_smb.put("injection_technique", injection_combo);
-        container_smb.put("custom_section_name", textCustomSection);
-
-        let panel_smb = form.create_panel();
-        panel_smb.setLayout(layout_smb);
-        return {
-            ui_panel: panel_smb,
-            ui_container: container_smb,
-            ui_height: 800,
-            ui_width: 800
-        }
-    }
-
     let container = form.create_container();
     container.put("format",               comboFormat)
     container.put("sleep",                textSleep)
@@ -609,10 +617,21 @@ function GenerateUI(listenerType)
     container.put("mask_heap",            heap_obf_check)
     container.put("mask_sleep",           sleep_mask_combo)
 
+    container.put("shellcode_source",     source_combo)
     container.put("pe_section",           section_combo)
+    container.put("custom_section_name",  textCustomSection)
     container.put("encryption_technique", encryption_combo)
     container.put("injection_technique",  injection_combo)
-    container.put("custom_section_name",  textCustomSection)
+    container.put("staging_host",         textStagingHost)
+    container.put("staging_url",          textStagingURL)
+    container.put("staging_port",         spinStagingPort)
+    container.put("staging_secure",       staging_secure_check)
+    container.put("staging_method",       staging_method_combo)
+    container.put("staging_useragent",    textStagingUA)
+    container.put("staging_headers",      textStagingHeaders)
+    container.put("staging_proxy",        textStagingProxy)
+    container.put("staging_max_retries",  spinStagingRetries)
+    container.put("staging_retry_delay",  spinStagingRetryDelay)
 
     let panel = form.create_panel();
     panel.setLayout(layout);
